@@ -1,14 +1,17 @@
-import pandas as pd
 import matplotlib.pyplot as plt
-
 import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
-from scipy.stats import norm
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 # Load the Brooklyn homes dataset
 brooklyn_homes = pd.read_csv("brooklyn_sales_map.csv")
+neighborhood_mapping = pd.read_csv("neighborhood_mapping.csv")
 inflation_data = pd.read_csv("Inflation.csv")
 percapita_data = pd.read_csv("Percapita.csv")
 
@@ -160,48 +163,193 @@ synthetic_time_series_data = pd.DataFrame(data={'sale_price': synthetic_sale_pri
 # Print the generated synthetic time series data
 print(synthetic_time_series_data.head())
 
-# Split the data into training and testing sets
-train_data, test_data = train_test_split(synthetic_time_series_data, test_size=0.2, random_state=42)
 
-# Train a predictive model (e.g., Random Forest) on the training data
-features = train_data.drop(columns=['target_column'])
-target = train_data['target_column']
-model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(features, target)
+# Assuming 'synthetic_time_series_data' DataFrame contains synthetic sale prices with dates as the index
 
-# Make predictions on the test data
-predictions = model.predict(test_data.drop(columns=['target_column']))
+# Feature engineering: Extracting year and month from the index
+synthetic_time_series_data['Year'] = synthetic_time_series_data.index.year
+synthetic_time_series_data['Month'] = synthetic_time_series_data.index.month
 
-# Calculate mean squared error to evaluate model performance
-mse = mean_squared_error(test_data['target_column'], predictions)
-print(f"Mean Squared Error: {mse}")
+# Creating a binary column 'Interest_Growth' to represent areas with growing interest (1) and decreasing interest (0)
+synthetic_time_series_data['Interest_Growth'] = 0  # Default is decreasing interest
 
-# Justification for Probabilistic Data Management:
-# In time series forecasting, uncertainty is a crucial factor. Probabilistic approaches help us
-# quantify this uncertainty. By using probabilistic data management, we can:
+# Linear regression for each year to identify trends
+for year in synthetic_time_series_data['Year'].unique():
+    year_data = synthetic_time_series_data[synthetic_time_series_data['Year'] == year]
 
-# 1. **Handle Noisy Data:** Time series data often contains noise. Probabilistic methods can model
-#    and handle this noise, providing a more robust analysis.
+    X = np.arange(len(year_data)).reshape(-1, 1)
+    y = year_data['sale_price'].values
 
-# 2. **Estimate Prediction Intervals:** Instead of providing point estimates, probabilistic models
-#    allow us to estimate prediction intervals. These intervals convey the range of possible values
-#    for the forecasted variable, providing a more realistic understanding of the predictions.
+    # Fit linear regression model
+    model = LinearRegression()
+    model.fit(X, y)
 
-# 3. **Incorporate Prior Knowledge:** Probabilistic approaches enable the incorporation of prior
-#    knowledge and domain expertise into the forecasting process, leading to more accurate results.
+    # Predictions
+    predictions = model.predict(X)
 
-# 4. **Detect Anomalies:** Probabilistic models can identify anomalies and outliers in the time
-#    series data, helping in detecting unusual patterns and improving the overall data quality.
+    # Assessing trend by comparing the first and last sale prices in the year
+    if predictions[-1] > predictions[0]:
+        synthetic_time_series_data.loc[synthetic_time_series_data['Year'] == year, 'Interest_Growth'] = 1
 
-# Example: Calculate 95% prediction interval for test data using Normal distribution assumption
-mean_predictions = np.mean(predictions)
-std_dev_predictions = np.std(predictions)
-confidence_level = 0.95
-z_score = norm.ppf((1 + confidence_level) / 2)
-lower_bound = mean_predictions - z_score * std_dev_predictions
-upper_bound = mean_predictions + z_score * std_dev_predictions
+# Visualizing the results
+plt.figure(figsize=(10, 6))
+plt.plot(synthetic_time_series_data.index, synthetic_time_series_data['sale_price'], label='Synthetic Sale Prices', color='blue')
+plt.scatter(synthetic_time_series_data[synthetic_time_series_data['Interest_Growth'] == 1].index,
+            synthetic_time_series_data[synthetic_time_series_data['Interest_Growth'] == 1]['sale_price'],
+            label='Interest Growing', color='green', marker='o')
+plt.scatter(synthetic_time_series_data[synthetic_time_series_data['Interest_Growth'] == 0].index,
+            synthetic_time_series_data[synthetic_time_series_data['Interest_Growth'] == 0]['sale_price'],
+            label='Interest Decreasing', color='red', marker='o')
 
-print(f"95% Prediction Interval: [{lower_bound}, {upper_bound}]")
+plt.xlabel('Date')
+plt.ylabel('Sale Price')
+plt.title('Synthetic Time Series Data and Interest Assessment')
+plt.legend()
+plt.show()
 
-# Further enhance the model using probabilistic techniques like Bayesian methods or quantile regression
-# to better capture uncertainty and improve the accuracy of the time series forecasting.
+print("Prediction Code")
+housing_data = pd.read_csv('brooklyn_sales_map.csv')
+
+# scatterplot visualisation
+plt.scatter(x=housing_data['year_of_sale'], y=housing_data['sale_price'])
+ax = plt.gca()
+ax.get_yaxis().get_major_formatter().set_scientific(False)
+plt.draw()
+
+# highest selling property
+housing_data.sort_values('sale_price').tail(1)
+housing_data['sale_price'].describe().apply(lambda x: format(x, 'f'))
+housing_data = housing_data[housing_data.sale_price > 0]
+
+# more visualisations
+bins = [-100000000, 20000, 40000, 60000, 80000, 100000, 1000000, 10000000, 500000000]
+choices = ['$0-$200k', '$200k-$400k', '$400k-$600k', '$600k-$800k', '$800k-$1mlln', '$1mlln-$10mlln',
+           '$10mlln-$100mlln', '$100mlln-$500mlln']
+housing_data['price_range'] = pd.cut(housing_data['sale_price'], bins=bins, labels=choices)
+
+
+def conv(year):
+    return housing_data[housing_data['year_of_sale'] == year].groupby('price_range').size()
+
+
+perc_total = [x / sum(x) * 100 for x in
+              [conv(2003), conv(2004), conv(2005), conv(2006), conv(2007), conv(2008), conv(2009), conv(2010),
+               conv(2011), conv(2012), conv(2013), conv(2014), conv(2015), conv(2016), conv(2017)]]
+year_names = list(range(2003, 2018))
+housing_df = pd.DataFrame(perc_total, index=year_names)
+ax_two = housing_df.plot(kind='barh', stacked=True, width=0.80)
+horiz_offset = 1
+vert_offset = 1
+ax_two.set_xlabel('Percentages')
+ax_two.set_ylabel('Years')
+ax_two.legend(bbox_to_anchor=(horiz_offset, vert_offset))
+housing_data.groupby(['neighborhood', 'price_range']).size().unstack().plot.bar(stacked=True)
+horiz_offset = 1
+vert_offset = 1
+plt.rcParams["figure.figsize"] = [40, 20]
+
+
+# removing outliers
+def remove_outlier(df, col):
+    q1 = df[col].quantile(0.25)
+    q3 = df[col].quantile(0.75)
+    iqr = q3 - q1
+    lower_bound = q1 - (1.5 * iqr)
+    upper_bound = q3 + (1.5 * iqr)
+    out_df = df.loc[(df[col] > lower_bound) & (df[col] < upper_bound)]
+    return out_df
+
+
+housing_data = remove_outlier(housing_data, "sale_price")
+
+# cleaning up columns with too many NAs
+threshold = len(housing_data) * .75
+housing_data.dropna(thresh=threshold, axis=1, inplace=True)
+
+# more clean up
+housing_data = housing_data.drop(
+    ['APPBBL', 'BoroCode', 'Borough', 'BBL', 'price_range', 'PLUTOMapID', 'YearBuilt', 'CondoNo', 'BuiltFAR',
+     'FireComp', 'MAPPLUTO_F', 'Sanborn', 'SanitBoro', 'Unnamed: 0', 'Version', 'block', 'borough', 'Address',
+     'OwnerName', 'zip_code'], axis=1)
+
+# if basement data is missing it might be safer to assume that whether or not the apartment/building is unknown which is represented by the number 5
+housing_data['BsmtCode'] = housing_data['BsmtCode'].fillna(5)
+# Community Area- not applicable or available if Na
+housing_data[['ComArea', 'CommFAR', 'FacilFAR', 'FactryArea', 'RetailArea', 'ProxCode', 'YearAlter1', 'YearAlter2']] = \
+housing_data[
+    ['ComArea', 'CommFAR', 'FacilFAR', 'FactryArea', 'RetailArea', 'ProxCode', 'YearAlter1', 'YearAlter2']].fillna(0)
+housing_data[
+    ['XCoord', 'YCoord', 'ZipCode', 'LotType', 'SanitDistr', 'HealthArea', 'HealthCent', 'PolicePrct', 'SchoolDist',
+     'tax_class_at_sale', 'CD', 'Council']] = housing_data[
+    ['XCoord', 'YCoord', 'ZipCode', 'LotType', 'SanitDistr', 'HealthArea', 'HealthCent', 'PolicePrct', 'SchoolDist',
+     'tax_class_at_sale', 'CD', 'Council']].apply(lambda x: x.fillna(x.mode()[0]))
+# soft impute
+from sklearn.impute import SimpleImputer
+numeric_cols = housing_data.select_dtypes(include=[np.number]).columns
+categorical_cols = housing_data.select_dtypes(exclude=[np.number]).columns
+
+imputer_numeric = SimpleImputer(strategy='median')
+imputer_categorical = SimpleImputer(strategy='most_frequent')
+
+housing_data[numeric_cols] = imputer_numeric.fit_transform(housing_data[numeric_cols])
+housing_data[categorical_cols] = imputer_categorical.fit_transform(housing_data[categorical_cols])
+
+
+# change strings to ints to preprocess for ML algo
+def strnums(cols):
+    return dict(zip(set(housing_data[cols]), list(range(0, len(set(housing_data[cols]))))))
+
+
+for columns in set(housing_data.select_dtypes(exclude='number')):
+    housing_data[columns] = housing_data[columns].map(strnums(columns))
+from sklearn.dummy import DummyRegressor
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
+
+features = list(housing_data.drop(['sale_price'], axis=1))
+y = housing_data.sale_price
+X = housing_data[features]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=100)
+dummy_median = DummyRegressor(strategy='mean')
+dummy_regressor = dummy_median.fit(X_train, y_train)
+dummy_predicts = dummy_regressor.predict(X_test)
+print("Model Accuracy:", dummy_regressor.score(X_test, y_test) * 100)
+print('$', mean_absolute_error(y_test, dummy_predicts))
+
+# multiple models
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+
+models = [RandomForestRegressor(n_estimators=200, criterion='squared_error', max_depth=20, random_state=100),
+          DecisionTreeRegressor(criterion='squared_error', max_depth=11, random_state=100),
+          GradientBoostingRegressor(n_estimators=200, max_depth=12)]
+learning_mods = pd.DataFrame()
+
+# run through models
+for model in models:
+    print(model)
+    m = str(model)
+    temp = {'Model': m[:m.index('(')]}  # Create a dictionary for each model
+    model.fit(X_train, y_train)
+    temp['R2_Price'] = r2_score(y_test, model.predict(X_test))
+    print('score on training', model.score(X_train, y_train))
+    print('r2 score', r2_score(y_test, model.predict(X_test)))
+    learning_mods = pd.concat([learning_mods, pd.DataFrame([temp])], ignore_index=True)  # Concatenate DataFrames
+
+learning_mods.set_index('Model', inplace=True)
+
+fig, axes = plt.subplots(ncols=1, figsize=(10, 4))
+learning_mods.R2_Price.plot(ax=axes, kind='bar', title='R2_Price')
+plt.show()
+
+# feature importance
+regressionTree_imp = model.feature_importances_
+plt.figure(figsize=(16, 6))
+plt.yscale('log')  # Remove nonposy argument
+plt.bar(range(len(regressionTree_imp)), regressionTree_imp, align='center')
+plt.xticks(range(len(regressionTree_imp)), features, rotation='vertical')
+plt.title('Feature Importance')
+plt.ylabel('Importance')
+plt.show()
