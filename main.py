@@ -317,39 +317,33 @@ dummy_predicts = dummy_regressor.predict(X_test)
 print("Model Accuracy:", dummy_regressor.score(X_test, y_test) * 100)
 print('$', mean_absolute_error(y_test, dummy_predicts))
 
-# multiple models
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
+import pandas as pd
 
-models = [RandomForestRegressor(n_estimators=200, criterion='squared_error', max_depth=20, random_state=100),
-          DecisionTreeRegressor(criterion='squared_error', max_depth=11, random_state=100),
-          GradientBoostingRegressor(n_estimators=200, max_depth=12)]
-learning_mods = pd.DataFrame()
+# Assuming you have X_train, X_test, y_train, y_test, and features defined
+# Replace this with your actual data
 
-# run through models
-for model in models:
-    print(model)
-    m = str(model)
-    temp = {'Model': m[:m.index('(')]}  # Create a dictionary for each model
-    model.fit(X_train, y_train)
-    temp['R2_Price'] = r2_score(y_test, model.predict(X_test))
-    print('score on training', model.score(X_train, y_train))
-    print('r2 score', r2_score(y_test, model.predict(X_test)))
-    learning_mods = pd.concat([learning_mods, pd.DataFrame([temp])], ignore_index=True)  # Concatenate DataFrames
+# Initialize Gaussian Naive Bayes model
+nb_model = GaussianNB()
 
-learning_mods.set_index('Model', inplace=True)
+# Fit the model to the training data
+nb_model.fit(X_train, y_train)
 
-fig, axes = plt.subplots(ncols=1, figsize=(10, 4))
-learning_mods.R2_Price.plot(ax=axes, kind='bar', title='R2_Price')
-plt.show()
+# Make predictions on the test data
+y_pred = nb_model.predict(X_test)
 
-# feature importance
-regressionTree_imp = model.feature_importances_
-plt.figure(figsize=(16, 6))
-plt.yscale('log')  # Remove nonposy argument
-plt.bar(range(len(regressionTree_imp)), regressionTree_imp, align='center')
-plt.xticks(range(len(regressionTree_imp)), features, rotation='vertical')
-plt.title('Feature Importance')
-plt.ylabel('Importance')
+# Calculate R2 score
+r2_nb = r2_score(y_test, y_pred)
+print('R2 Score:', r2_nb)
+
+# Feature Importance is not directly available in Gaussian Naive Bayes
+# You may not have a direct feature importance measure like in tree-based models
+
+# Visualize the R2 score
+plt.bar(['Naive Bayes'], [r2_nb], align='center')
+plt.title('R2 Score Comparison')
+plt.xlabel('Model')
+plt.ylabel('R2 Score')
 plt.show()
